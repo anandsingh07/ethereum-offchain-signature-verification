@@ -8,7 +8,14 @@ contract SignedExecutionVault {
 
     mapping(address => uint256)public nonces ;
     
-    event Executed();
+    event Executed(
+        address indexed signer ,
+        address indexed executer ,
+        uint256 indexed nonce ,
+        bytes32 actionHash ,
+        uint256 timestamp
+
+    );
 
     function execute() external {};
 }
