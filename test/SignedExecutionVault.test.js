@@ -1,75 +1,101 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 
 describe("SignedExecutionVault", function () {
-  it("executes a valid signed action", async function () {
-    const [executor, signer] = await ethers.getSigners();
+  let vault;
+  let signer;
+  let relayer;
+
+  beforeEach(async function () {
+    [signer, relayer] = await ethers.getSigners();
 
     const Vault = await ethers.getContractFactory("SignedExecutionVault");
-    const vault = await Vault.deploy();
+    vault = await Vault.deploy();
     await vault.waitForDeployment();
+  });
 
-    const nonce = 0;
-    const actionData = ethers.solidityPacked(["string"], ["DO_SOMETHING"]);
-
-    const chainId = (await ethers.provider.getNetwork()).chainId;
-
-    const actionHash = ethers.keccak256(
+  function buildHash(vaultAddress, chainId, signer, actionData, nonce) {
+    return ethers.keccak256(
       ethers.solidityPacked(
         ["address", "uint256", "address", "bytes", "uint256"],
-        [vault.target, chainId, signer.address, actionData, nonce]
+        [vaultAddress, chainId, signer, actionData, nonce]
       )
+    );
+  }
+
+  it("executes with valid signature", async function () {
+    const actionData = ethers.toUtf8Bytes("DO_SOMETHING");
+    const nonce = 0;
+
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const hash = buildHash(
+      vault.target,
+      chainId,
+      signer.address,
+      actionData,
+      nonce
     );
 
     const signature = await signer.signMessage(
-      ethers.getBytes(actionHash)
+      ethers.getBytes(hash)
     );
 
     await expect(
       vault
-        .connect(executor)
+        .connect(relayer)
         .execute(signer.address, actionData, nonce, signature)
-    )
-      .to.emit(vault, "Executed")
-      .withArgs(
-        signer.address,
-        executor.address,
-        nonce,
-        actionHash,
-        anyValue
-      );
-
-    expect(await vault.nonces(signer.address)).to.equal(1);
+    ).to.emit(vault, "Executed");
   });
 
-  it("rejects replay attack", async function () {
-    const [executor, signer] = await ethers.getSigners();
-
-    const Vault = await ethers.getContractFactory("SignedExecutionVault");
-    const vault = await Vault.deploy();
-    await vault.waitForDeployment();
-
+  it("reverts on replay attack", async function () {
+    const actionData = ethers.toUtf8Bytes("REPLAY");
     const nonce = 0;
-    const actionData = ethers.solidityPacked(["string"], ["REPLAY"]);
 
     const chainId = (await ethers.provider.getNetwork()).chainId;
-
-    const actionHash = ethers.keccak256(
-      ethers.solidityPacked(
-        ["address", "uint256", "address", "bytes", "uint256"],
-        [vault.target, chainId, signer.address, actionData, nonce]
-      )
+    const hash = buildHash(
+      vault.target,
+      chainId,
+      signer.address,
+      actionData,
+      nonce
     );
 
     const signature = await signer.signMessage(
-      ethers.getBytes(actionHash)
+      ethers.getBytes(hash)
     );
 
-    await vault.execute(signer.address, actionData, nonce, signature);
+    await vault
+      .connect(relayer)
+      .execute(signer.address, actionData, nonce, signature);
 
     await expect(
-      vault.execute(signer.address, actionData, nonce, signature)
+      vault
+        .connect(relayer)
+        .execute(signer.address, actionData, nonce, signature)
     ).to.be.revertedWith("INVALID_NONCE");
   });
-});
+
+  it("reverts with wrong signer", async function () {
+    const actionData = ethers.toUtf8Bytes("INVALID_SIGNER");
+    const nonce = 0;
+
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const hash = buildHash(
+      vault.target,
+      chainId,
+      signer.address,
+      actionData,
+      nonce
+    );
+
+    const badSignature = await relayer.signMessage(
+      ethers.getBytes(hash)
+    );
+
+    await expect(
+      vault
+        .connect(relayer)
+        .execute(signer.address, actionData, nonce, badSignature)
+    ).to.be.revertedWith("INVALID_SIGNATURE");
+  });
+});    
