@@ -1,8 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const { ethers } = require("ethers");
+const cors = require("cors");
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
@@ -44,6 +46,6 @@ app.post("/execute", async (req, res) => {
   }
 });
 
-app.listen(3007, () => {
-  console.log("Relayer running on port 3007");
+app.listen(3000, () => {
+  console.log("Relayer running on port 3000");
 });

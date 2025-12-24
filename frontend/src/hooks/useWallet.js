@@ -15,6 +15,7 @@ export function useWallet() {
 
     setProvider(browserProvider);
     setSigner(walletSigner);
+     console.log("Connected wallet:", await walletSigner.getAddress());
   }
 
   return { provider, signer, connect };
